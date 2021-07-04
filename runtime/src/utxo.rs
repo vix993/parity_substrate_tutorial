@@ -17,9 +17,39 @@ pub trait Trait: system::Trait {
 	type Event: From<Event> + Into<<Self as system::Trait>::Event>;
 }
 
+#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Default, Clone, Encode, Decode, Hash, Debug)]
+pub struct TransactionInput {
+	pub outpoint: H256, // reference to a UTXO to be spent
+	pub sigscript: H512, // proof
+}
+#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Default, Clone, Encode, Decode, Hash, Debug)]
+pub struct TransactionOutput {
+	pub value: Value, //value associated with this UTXO
+	pub pubkey: H256, // public key associated with this output, key of the UTXO's owner
+}
+
+#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Default, Clone, Encode, Decode, Hash, Debug)]
+pub struct Transaction {
+	pub inputs: Vec<TransactionInput>,
+	pub outputs: Vec<TransactionOutput>,
+}
+
 decl_storage! {
 	trait Store for Module<T: Trait> as Utxo {
+		UtxoStore build(|config: &GenesisConfig| {
+			config.genesis_utxos
+				.iter()
+				.cloned()
+				.map(|u| (BlakeTwo256::hash_of(&u), u))
+				.collect::<Vec<_>>()
+		}): map hasher(identity) H256 => Option<TransactionOutput>;
+	}
 
+	add_extra_genersis {
+		config(genesis_utxos): Vec<TransactionOutputs>;
 	}
 }
 
@@ -27,6 +57,16 @@ decl_storage! {
 decl_module! {
 	pub struct Module<T: Trait> for enum Call where origin: T::Origin {
 		fn deposit_event() = default;
+
+		pub fn spend(_origin, transaction: Transaction) -> DispatchResult {
+			// 1. TODO Check transaction is valid
+
+			// 2. write to storage
+			Self::update_storage(&transaction)?;
+
+			// 3. emit success event
+			Ok(()) // Or Error
+		}
 
 	}
 }
@@ -37,6 +77,27 @@ decl_event! {
 	}
 }
 
+impl<T: Trait> Module<T> {
+
+	fn update_storage(transaction: &Transaction) -> DispatchResult {
+		// 1. remove input UTXO from utxostore
+		for input in &transaction.inputsts {
+			<UtxoStore>::remove(input.outpoint);
+		}
+
+		// 2. Create the new UTXOs in utxostore
+		let mut index: u64 = 0;
+		for output in &transaction.outputs {
+			let hash = BlakeTwo256::hash_of( &(&transaction.encode(), index) );
+			index = index.checked_add(1).ok_or("output index overflow")?;
+
+			// 50, 0x000
+			<UtxoStore>::insert(hash, output)
+		}
+
+		Ok(())
+	}
+}
 /// Tests for this module
 #[cfg(test)]
 mod tests {
